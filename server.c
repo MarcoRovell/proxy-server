@@ -143,16 +143,38 @@ void handle_request(struct server_app *app, int client_socket) {
     strcpy(request, buffer);
 
     // TODO: Parse the header and extract essential fields, e.g. file name
-    // Hint: if the requested path is "/" (root), default to index.html
-    char file_name[] = "index.html";
+    char *request_line = strtok(request, "\r\n");
+    char method[16], path[256], protocol[16];
+    sscanf(request_line, "%s %s %s", method, path, protocol);
 
+    // printf("Method: %s\n", method);
+    // printf("Path: %s\n", path);
+    // printf("Protocol: %s\n", protocol);
+    
+    if (strcmp(method, "GET") || strcmp(protocol, "HTTP/1.1")) {
+        // error
+    }
+
+    // Hint: if the requested path is "/" (root), default to index.html
+    // char *file_name[] = (strcmp(path, "/") || strcmp(path, "/index.html")) ? path : "/index.html";
+    char *file_name;
+    if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
+        file_name = "index.html";
+    } 
+    else {
+        file_name = path;
+    }
+    // printf("file_name: %s\n", file_name);
+    serve_local_file(client_socket, file_name);
+    
     // TODO: Implement proxy and call the function under condition
     // specified in the spec
     // if (need_proxy(...)) {
     //    proxy_remote_file(app, client_socket, file_name);
     // } else {
-    serve_local_file(client_socket, file_name);
+    // serve_local_file(client_socket, file_name);
     //}
+    free(request);
 }
 
 void serve_local_file(int client_socket, const char *path) {
@@ -167,7 +189,7 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
-    char response[] = "HTTP/1.0 200 OK\r\n"
+    char response[] = "HTTP/1.1 200 OK\r\n"
                       "Content-Type: text/plain; charset=UTF-8\r\n"
                       "Content-Length: 15\r\n"
                       "\r\n"
