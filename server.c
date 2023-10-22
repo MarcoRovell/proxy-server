@@ -143,38 +143,43 @@ void handle_request(struct server_app *app, int client_socket) {
     strcpy(request, buffer);
 
     // TODO: Parse the header and extract essential fields, e.g. file name
-    char *request_line = strtok(request, "\r\n");
+    char *request_line = strtok(request, "\r\n"); // crlf
+        // GET /index.html HTTP/1.1 
     char method[16], path[256], protocol[16];
     sscanf(request_line, "%s %s %s", method, path, protocol);
-
-    // printf("Method: %s\n", method);
-    // printf("Path: %s\n", path);
-    // printf("Protocol: %s\n", protocol);
     
-    if (strcmp(method, "GET") || strcmp(protocol, "HTTP/1.1")) {
-        // error
-    }
-
-    // Hint: if the requested path is "/" (root), default to index.html
-    // char *file_name[] = (strcmp(path, "/") || strcmp(path, "/index.html")) ? path : "/index.html";
-    char *file_name;
-    if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
-        file_name = "index.html";
-    } 
-    else {
-        file_name = path;
-    }
-    // printf("file_name: %s\n", file_name);
-    serve_local_file(client_socket, file_name);
-    
-    // TODO: Implement proxy and call the function under condition
-    // specified in the spec
-    // if (need_proxy(...)) {
-    //    proxy_remote_file(app, client_socket, file_name);
-    // } else {
-    // serve_local_file(client_socket, file_name);
-    //}
     free(request);
+
+    printf("Method: %s\n", method);
+    printf("Path: %s\n", path);
+    printf("Protocol: %s\n", protocol);
+    
+    if (strcmp(method, "GET") != 0) {
+        char response[] = "HTTP/1.1 400 Bad Request\r\n\n";
+        send(client_socket, response, strlen(response), 0);
+    }
+    else {
+        // Hint: if the requested path is "/" (root), default to index.html
+        // char *file_name[] = (strcmp(path, "/") || strcmp(path, "/index.html")) ? path : "/index.html";
+        char *file_name;
+        if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
+            file_name = "/index.html";
+        } 
+        else {
+            file_name = path;
+        }
+
+        printf("localhost: %s\n", file_name);
+    
+        // TODO: Implement proxy and call the function under condition
+        // specified in the spec
+        // if (need_proxy(...)) {
+        //    proxy_remote_file(app, client_socket, file_name);
+        // } else {
+        serve_local_file(client_socket, file_name);
+        //}
+    }
+    
 }
 
 void serve_local_file(int client_socket, const char *path) {
@@ -189,13 +194,37 @@ void serve_local_file(int client_socket, const char *path) {
     // (When the requested file does not exist):
     // * Generate a correct response
 
-    char response[] = "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: text/plain; charset=UTF-8\r\n"
-                      "Content-Length: 15\r\n"
-                      "\r\n"
-                      "Sample response";
+    char fileURL[256];
+    strcpy(fileURL, ".");
+    strcat(fileURL, path);
 
-    send(client_socket, response, strlen(response), 0);
+    printf("fileURL: %s\n", fileURL);
+
+    FILE *file = fopen(fileURL, "r"); // file descriptor
+    if (!file)
+    {
+        char response[] = "HTTP/1.1 404 Not Found\r\n\n";
+        // printf("failure to open: %s\n", fileURL);
+        send(client_socket, response, sizeof(response), 0);
+    }
+    else {
+        fseek(file, 0, SEEK_END);
+        int size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+
+        char* buf = malloc(size);
+        memset(buf, '\0', file_size); // initialization of buf
+
+        char response[] = "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: text/html; charset=UTF-8\r\n" // we need to be able to support many content types
+                      "Content-Length: 15\r\n" // change content-length to be correct size
+                      "\r\n"
+                      "Happy Birthday"; // this must be index.html
+        // we need to be able to write from *file into a container
+        send(client_socket, response, strlen(response), 0);
+        fclose(file);
+        free(buf);
+    }
 }
 
 void proxy_remote_file(struct server_app *app, int client_socket, const char *request) {
@@ -207,7 +236,7 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // Bonus:
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
-
+    
     char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
     send(client_socket, response, strlen(response), 0);
 }
