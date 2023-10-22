@@ -213,7 +213,7 @@ void serve_local_file(int client_socket, const char *path) {
         fseek(file, 0, SEEK_SET);
 
         char* buf = malloc(size);
-        memset(buf, '\0', file_size); // initialization of buf
+        memset(buf, '\0', size); // initialization of buf
 
         char response[] = "HTTP/1.1 200 OK\r\n"
                       "Content-Type: text/html; charset=UTF-8\r\n" // we need to be able to support many content types
