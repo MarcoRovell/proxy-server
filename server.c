@@ -32,6 +32,7 @@ struct server_app {
 // The following function is implemented for you and doesn't need
 // to be change
 void parse_args(int argc, char *argv[], struct server_app *app);
+char* getContentType(const char* fileURL);
 
 // The following functions need to be updated
 void handle_request(struct server_app *app, int client_socket);
@@ -167,10 +168,7 @@ void handle_request(struct server_app *app, int client_socket) {
         } 
         else {
             file_name = path;
-        }
-
-        printf("localhost: %s\n", file_name);
-    
+        }    
         // TODO: Implement proxy and call the function under condition
         // specified in the spec
         // if (need_proxy(...)) {
@@ -198,8 +196,6 @@ void serve_local_file(int client_socket, const char *path) {
     strcpy(fileURL, ".");
     strcat(fileURL, path);
 
-    printf("fileURL: %s\n", fileURL);
-
     FILE *file = fopen(fileURL, "r"); // file descriptor
     if (!file)
     {
@@ -208,22 +204,23 @@ void serve_local_file(int client_socket, const char *path) {
         send(client_socket, response, sizeof(response), 0);
     }
     else {
+
         fseek(file, 0, SEEK_END);
         int size = ftell(file);
         fseek(file, 0, SEEK_SET);
 
-        char* buf = malloc(size);
-        memset(buf, '\0', size); // initialization of buf
-
-        char response[] = "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: text/html; charset=UTF-8\r\n" // we need to be able to support many content types
-                      "Content-Length: 15\r\n" // change content-length to be correct size
-                      "\r\n"
-                      "Happy Birthday"; // this must be index.html
-        // we need to be able to write from *file into a container
-        send(client_socket, response, strlen(response), 0);
+        int requiredSize = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
+        char* headers = malloc(requiredSize + 1);
+        snprintf(headers, requiredSize + 1, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
+        send(client_socket, headers, requiredSize + 1, 0);
+        char* buffer = malloc(size);
+        size_t bytes_read = fread(buffer, 1, size, file);
+        if (bytes_read > 0) {
+            send(client_socket, buffer, bytes_read, 0);
+        }
         fclose(file);
-        free(buf);
+        free(headers);
+        free(buffer);
     }
 }
 
@@ -240,3 +237,28 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
     send(client_socket, response, strlen(response), 0);
 }
+
+char* getContentType(const char* fileURL) {
+    char* dot = strrchr(fileURL, '.');
+    if (dot == NULL) { return "application/octet-stream"; } 
+    else { dot++; }
+    if (strcmp(dot, "html") == 0) {
+        return "text/html; charset=utf-8";
+    } else if (strcmp(dot, "txt") == 0) {
+        return "text/plain; charset=utf-8";
+    } else if (strcmp(dot, "jpg") == 0 || strcmp(fileURL, "jpeg") == 0) {
+        return "image/jpeg";
+    } else if (strcmp(dot, "png") == 0) {
+        return "image/png";
+    } else {
+        return "application/octet-stream";
+    }
+}
+
+// char* getContentType(char* fileURL) {
+//     printf("opened file: %s\n", "yay");
+//     if (strstr(fileURL, ".html")) return "text/html; charset=UTF-8";
+//     if (strstr(fileURL, ".txt")) return "text/plain; charset=UTF-8";
+//     if (strstr(fileURL, ".jpg")) return "image/jpeg";
+//     return "application/octet-stream";
+// }
