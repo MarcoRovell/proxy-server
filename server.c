@@ -171,11 +171,11 @@ void handle_request(struct server_app *app, int client_socket) {
         }    
         // TODO: Implement proxy and call the function under condition
         // specified in the spec
-        // if (need_proxy(...)) {
-        //    proxy_remote_file(app, client_socket, file_name);
-        // } else {
-        serve_local_file(client_socket, file_name);
-        //}
+        if (strstr(file_name, ".ts") || strstr(file_name, ".m3u8")) {
+            proxy_remote_file(app, client_socket, request);
+        } else {
+            serve_local_file(client_socket, file_name);
+        }
     }
     
 }
@@ -233,9 +233,41 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // Bonus:
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
-    
-    char response[] = "HTTP/1.0 501 Not Implemented\r\n\r\n";
-    send(client_socket, response, strlen(response), 0);
+    int remote_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (remote_socket == -1) {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in remote_addr;
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_port = htons(app->remote_port);
+    if (inet_pton(AF_INET, app->remote_host, &remote_addr.sin_addr) <= 0) {
+        perror("inet_pton failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if(connect(remote_socket, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0) {
+        perror("connect failed"); // HTTP 502 Bad Gateway
+        char response[] = "HTTP/1.1 502 Bad Gateway\r\n\r\n";
+        send(client_socket, response, strlen(response), 0);
+    }
+
+    send(remote_socket, request, strlen(request), 0);
+
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+    while ((bytes_read = recv(remote_socket, buffer, sizeof(buffer), 0)) > 0) {
+        send(client_socket, buffer, bytes_read, 0);
+    }
+    if (bytes_read < 0) {
+        perror("recv failed");
+        exit(EXIT_FAILURE);
+    } else if (bytes_read == 0) {  // remote closed connection
+        perror("remote closed connection");
+        exit(EXIT_FAILURE);
+    }
+    close(remote_socket);
 }
 
 char* getContentType(const char* fileURL) {
@@ -254,11 +286,3 @@ char* getContentType(const char* fileURL) {
         return "application/octet-stream";
     }
 }
-
-// char* getContentType(char* fileURL) {
-//     printf("opened file: %s\n", "yay");
-//     if (strstr(fileURL, ".html")) return "text/html; charset=UTF-8";
-//     if (strstr(fileURL, ".txt")) return "text/plain; charset=UTF-8";
-//     if (strstr(fileURL, ".jpg")) return "image/jpeg";
-//     return "application/octet-stream";
-// }
