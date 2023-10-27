@@ -144,8 +144,7 @@ void handle_request(struct server_app *app, int client_socket) {
     strcpy(request, buffer);
 
     // TODO: Parse the header and extract essential fields, e.g. file name
-    char *request_line = strtok(request, "\r\n"); // crlf
-        // GET /index.html HTTP/1.1 
+    char *request_line = strtok(request, "\r\n"); 
     char method[16], path[256], protocol[16];
     sscanf(request_line, "%s %s %s", method, path, protocol);
     
@@ -156,12 +155,11 @@ void handle_request(struct server_app *app, int client_socket) {
     printf("Protocol: %s\n", protocol);
     
     if (strcmp(method, "GET") != 0) {
-        char response[] = "HTTP/1.1 400 Bad Request\r\n\n";
+        char response[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
         send(client_socket, response, strlen(response), 0);
     }
     else {
         // Hint: if the requested path is "/" (root), default to index.html
-        // char *file_name[] = (strcmp(path, "/") || strcmp(path, "/index.html")) ? path : "/index.html";
         char *file_name;
         if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
             file_name = "/index.html";
@@ -171,7 +169,7 @@ void handle_request(struct server_app *app, int client_socket) {
         }    
         // TODO: Implement proxy and call the function under condition
         // specified in the spec
-        if (strstr(file_name, ".ts") || strstr(file_name, ".m3u8")) {
+        if (strstr(file_name, ".ts")) {
             proxy_remote_file(app, client_socket, request);
         } else {
             serve_local_file(client_socket, file_name);
@@ -196,28 +194,29 @@ void serve_local_file(int client_socket, const char *path) {
     strcpy(fileURL, ".");
     strcat(fileURL, path);
 
-    FILE *file = fopen(fileURL, "r"); // file descriptor
+    FILE *file = fopen(fileURL, "rb"); // file descriptor
     if (!file)
     {
-        char response[] = "HTTP/1.1 404 Not Found\r\n\n";
-        // printf("failure to open: %s\n", fileURL);
+        char response[] = "HTTP/1.1 404 Not Found\r\n\r\n";
         send(client_socket, response, sizeof(response), 0);
     }
     else {
-
         fseek(file, 0, SEEK_END);
         int size = ftell(file);
         fseek(file, 0, SEEK_SET);
 
         int requiredSize = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
-        char* headers = malloc(requiredSize + 1);
-        snprintf(headers, requiredSize + 1, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
-        send(client_socket, headers, requiredSize + 1, 0);
+        char* headers = malloc(requiredSize + 1 + size);
         char* buffer = malloc(size);
         size_t bytes_read = fread(buffer, 1, size, file);
-        if (bytes_read > 0) {
-            send(client_socket, buffer, bytes_read, 0);
-        }
+        // if (bytes_read <= 0) {
+        //     perror("fread failed");
+        //     exit(EXIT_FAILURE);
+        // }
+
+        snprintf(headers, requiredSize + 1 + size, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", getContentType(path), size, buffer);
+        send(client_socket, headers, requiredSize + 1 + size, 0);
+
         fclose(file);
         free(headers);
         free(buffer);
@@ -278,7 +277,7 @@ char* getContentType(const char* fileURL) {
         return "text/html; charset=utf-8";
     } else if (strcmp(dot, "txt") == 0) {
         return "text/plain; charset=utf-8";
-    } else if (strcmp(dot, "jpg") == 0 || strcmp(fileURL, "jpeg") == 0) {
+    } else if (strcmp(dot, "jpg") == 0 || strcmp(dot, "jpeg") == 0) {
         return "image/jpeg";
     } else if (strcmp(dot, "png") == 0) {
         return "image/png";
