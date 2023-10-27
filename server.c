@@ -129,8 +129,6 @@ void handle_request(struct server_app *app, int client_socket) {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
 
-
-
     bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
     if (bytes_read <= 0) {
         return;  // Connection closed or error
@@ -174,7 +172,7 @@ void handle_request(struct server_app *app, int client_socket) {
         // TODO: Implement proxy and call the function under condition
         // specified in the spec
         if (strstr(file_name, ".ts")) {
-            proxy_remote_file(app, client_socket, request);
+            proxy_remote_file(app, client_socket, buffer);
         } else {
             serve_local_file(client_socket, file_name);
         }
@@ -235,6 +233,8 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
 
+    // printf("%s\n", "calling proxy");
+    printf("%s\n", request);
     struct sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(app->remote_port);
@@ -249,21 +249,23 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
         exit(EXIT_FAILURE);
     }
 
-    if(connect(remote_socket, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0) {
+    if(connect(remote_socket, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) != 0) {
         perror("connect failed"); // HTTP 502 Bad Gateway
         char response[] = "HTTP/1.1 502 Bad Gateway\r\n\r\n";
         send(client_socket, response, strlen(response), 0);
         exit(EXIT_FAILURE);
     } else {
         send(remote_socket, request, strlen(request), 0);
+        printf("REQUEST SENT: %s\n", request);
+
         char buffer[BUFFER_SIZE];
-        ssize_t bytes_read;
+        int bytes_read;
         while ((bytes_read = recv(remote_socket, buffer, BUFFER_SIZE, 0)) != 0) {
             send(client_socket, buffer, bytes_read, 0);
         }
-    }
 
-    close(remote_socket);
+        close(remote_socket);
+    }
 }
 
 char* getContentType(const char* fileURL) {
@@ -307,4 +309,3 @@ int url_decode(const char *encoded, char *decoded, size_t decoded_size) {
     decoded[decoded_index] = '\0';
     return 0;
 }
-
