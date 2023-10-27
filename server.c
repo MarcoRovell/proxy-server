@@ -32,7 +32,8 @@ struct server_app {
 // The following function is implemented for you and doesn't need
 // to be change
 void parse_args(int argc, char *argv[], struct server_app *app);
-char* getContentType(const char* fileURL);
+char* getContentType(const char* fileURL); // utility
+int url_decode(const char *encoded, char *decoded, size_t decoded_size); // utility
 
 // The following functions need to be updated
 void handle_request(struct server_app *app, int client_socket);
@@ -128,11 +129,8 @@ void handle_request(struct server_app *app, int client_socket) {
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
 
-    // Read the request from HTTP client
-    // Note: This code is not ideal in the real world because it
-    // assumes that the request header is small enough and can be read
-    // once as a whole.
-    // However, the current version suffices for our testing.
+
+
     bytes_read = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
     if (bytes_read <= 0) {
         return;  // Connection closed or error
@@ -159,13 +157,19 @@ void handle_request(struct server_app *app, int client_socket) {
         send(client_socket, response, strlen(response), 0);
     }
     else {
-        // Hint: if the requested path is "/" (root), default to index.html
+        char decoded_path[256];
+        if (url_decode(path, decoded_path, sizeof(decoded_path)) != 0) {
+            char response[] = "HTTP/1.1 400 Bad Request\r\n\r\n";
+            send(client_socket, response, strlen(response), 0);
+            exit(EXIT_FAILURE);
+        }
+
         char *file_name;
-        if (strcmp(path, "/") == 0 || strcmp(path, "/index.html") == 0) {
+        if (strcmp(decoded_path, "/") == 0 || strcmp(decoded_path, "/index.html") == 0) {
             file_name = "/index.html";
         } 
         else {
-            file_name = path;
+            file_name = decoded_path;
         }    
         // TODO: Implement proxy and call the function under condition
         // specified in the spec
@@ -195,7 +199,7 @@ void serve_local_file(int client_socket, const char *path) {
     strcat(fileURL, path);
 
     FILE *file = fopen(fileURL, "rb"); // file descriptor
-    if (!file)
+    if (file == NULL)
     {
         char response[] = "HTTP/1.1 404 Not Found\r\n\r\n";
         send(client_socket, response, sizeof(response), 0);
@@ -230,17 +234,18 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
     // Bonus:
     // * When connection to the remote server fail, properly generate
     // HTTP 502 "Bad Gateway" response
-    int remote_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (remote_socket == -1) {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
-    }
 
     struct sockaddr_in remote_addr;
     remote_addr.sin_family = AF_INET;
     remote_addr.sin_port = htons(app->remote_port);
-    if (inet_pton(AF_INET, app->remote_host, &remote_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, app->remote_host, &(remote_addr.sin_addr)) <= 0) {
         perror("inet_pton failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int remote_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (remote_socket == -1) {
+        perror("socket failed");
         exit(EXIT_FAILURE);
     }
 
@@ -248,22 +253,16 @@ void proxy_remote_file(struct server_app *app, int client_socket, const char *re
         perror("connect failed"); // HTTP 502 Bad Gateway
         char response[] = "HTTP/1.1 502 Bad Gateway\r\n\r\n";
         send(client_socket, response, strlen(response), 0);
+        exit(EXIT_FAILURE);
+    } else {
+        send(remote_socket, request, strlen(request), 0);
+        char buffer[BUFFER_SIZE];
+        ssize_t bytes_read;
+        while ((bytes_read = recv(remote_socket, buffer, BUFFER_SIZE, 0)) != 0) {
+            send(client_socket, buffer, bytes_read, 0);
+        }
     }
 
-    send(remote_socket, request, strlen(request), 0);
-
-    char buffer[BUFFER_SIZE];
-    ssize_t bytes_read;
-    while ((bytes_read = recv(remote_socket, buffer, sizeof(buffer), 0)) > 0) {
-        send(client_socket, buffer, bytes_read, 0);
-    }
-    if (bytes_read < 0) {
-        perror("recv failed");
-        exit(EXIT_FAILURE);
-    } else if (bytes_read == 0) {  // remote closed connection
-        perror("remote closed connection");
-        exit(EXIT_FAILURE);
-    }
     close(remote_socket);
 }
 
@@ -283,3 +282,29 @@ char* getContentType(const char* fileURL) {
         return "application/octet-stream";
     }
 }
+
+int url_decode(const char *encoded, char *decoded, size_t decoded_size) {
+    size_t encoded_len = strlen(encoded);
+    size_t decoded_index = 0;
+
+    for (size_t i = 0; i < encoded_len && decoded_index < decoded_size; i++) {
+        if (encoded[i] == '%' && i + 2 < encoded_len) {
+            char hex[3] = {encoded[i + 1], encoded[i + 2], '\0'};
+            int value = 0;
+            if (sscanf(hex, "%x", &value) == 1) {
+                decoded[decoded_index++] = (char)value;
+                i += 2; 
+            } else {
+                return -1; 
+            }
+        } else if (encoded[i] == '+') {
+            decoded[decoded_index++] = ' ';
+        } else {
+            decoded[decoded_index++] = encoded[i];
+        }
+    }
+
+    decoded[decoded_index] = '\0';
+    return 0;
+}
+
