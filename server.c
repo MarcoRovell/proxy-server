@@ -206,20 +206,18 @@ void serve_local_file(int client_socket, const char *path) {
         fseek(file, 0, SEEK_SET);
 
         int requiredSize = snprintf(NULL, 0, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
-        char* headers = malloc(requiredSize + 1 + size);
-        char* buffer = malloc(size);
-        size_t bytes_read = fread(buffer, 1, size, file);
-        // if (bytes_read <= 0) {
-        //     perror("fread failed");
-        //     exit(EXIT_FAILURE);
-        // }
+        char* headers = malloc(requiredSize + 1); // Don't include space for the file content
+        snprintf(headers, requiredSize + 1, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n", getContentType(path), size);
+        send(client_socket, headers, requiredSize, 0);
+        free(headers);
 
-        snprintf(headers, requiredSize + 1 + size, "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", getContentType(path), size, buffer);
-        send(client_socket, headers, requiredSize + 1 + size, 0);
+        char buffer[BUFFER_SIZE];
+        size_t bytes_read;
+        while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+            send(client_socket, buffer, bytes_read, 0);
+        }
 
         fclose(file);
-        free(headers);
-        free(buffer);
     }
 }
 
